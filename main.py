@@ -1,159 +1,95 @@
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    ConversationHandler,
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 
 TOKEN = "8038871118:AAG78r6cvtCGn2sCmcTioECNxcRY0q_91Jc"
-SCELTA_AZIONE, SCELTA_GIORNO, ALLENAMENTO = range(3)
 
-schede_settimanali = {
-    "Lunedì": [
-        {"nome": "Chest press (warm-up)", "serie": 1, "ripetizioni": 15, "warmup": True, "recupero": 45},
-        {"nome": "Panca piana", "serie": 4, "ripetizioni": 8, "recupero": 90},
-        {"nome": "Curl con bilanciere", "serie": 4, "ripetizioni": 10, "recupero": 60}
-    ],
-    "Venerdì": [
-        {"nome": "Squat corpo libero (warm-up)", "serie": 1, "ripetizioni": 15, "warmup": True, "recupero": 45},
-        {"nome": "Squat", "serie": 4, "ripetizioni": 8, "recupero": 120}
-    ]
-}
-
-user_sessions = {}
+# Scheda full body ipertrofica
+workout_plan = [
+    {
+        "muscle": "Petto",
+        "exercise": "Panca Piana con Bilanciere",
+        "description": "Sdraiati su una panca, piedi a terra, abbassa il bilanciere al petto e spingi su in maniera controllata.",
+        "test": "3x8-12 con 60-75% del massimale"
+    },
+    {
+        "muscle": "Schiena",
+        "exercise": "Trazioni alla Sbarra",
+        "description": "Impugnatura prona, tira il corpo verso l’alto fino a superare il mento, controlla la discesa.",
+        "test": "3x6-10 (aggiungi zavorra se sei avanzato)"
+    },
+    {
+        "muscle": "Gambe",
+        "exercise": "Squat con Bilanciere",
+        "description": "Scendi sotto il parallelo mantenendo il core contratto, risali spingendo con i talloni.",
+        "test": "4x8-12 con carico progressivo"
+    },
+    {
+        "muscle": "Spalle",
+        "exercise": "Military Press",
+        "description": "Spingi il bilanciere sopra la testa da in piedi, mantieni il busto fermo.",
+        "test": "3x8-10"
+    },
+    {
+        "muscle": "Bicipiti",
+        "exercise": "Curl con Bilanciere",
+        "description": "Piedi larghi come le spalle, porta il bilanciere al petto senza oscillare.",
+        "test": "3x10-12"
+    },
+    {
+        "muscle": "Tricipiti",
+        "exercise": "French Press",
+        "description": "Sdraiati, braccia perpendicolari, piega i gomiti portando il bilanciere verso la fronte.",
+        "test": "3x10-12"
+    }
+]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🏋️ Allenamento", callback_data="allenamento")],
-        [InlineKeyboardButton("📄 Log allenamenti", callback_data="log")],
-        [InlineKeyboardButton("ℹ️ Info", callback_data="info")]
+        [InlineKeyboardButton("Inizia Allenamento Full Body", callback_data="start_workout")],
     ]
-    markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Benvenuto! Cosa vuoi fare?", reply_markup=markup)
-    return SCELTA_AZIONE
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Ciao atleta! Sei pronto per la tua sessione di ipertrofia? **3x a settimana**! Spingiamo forte!", reply_markup=reply_markup)
 
-async def menu_principale(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    scelta = query.data
-    if scelta == "allenamento":
-        keyboard = [[InlineKeyboardButton(g, callback_data=g)] for g in schede_settimanali]
-        markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("Scegli il giorno:", reply_markup=markup)
-        return SCELTA_GIORNO
-    elif scelta == "log":
+
+    if query.data == "start_workout":
+        await query.edit_message_text("**Riscaldamento in corso…**\n\n- Jumping jacks x 1 min\n- Squat a corpo libero x 15\n- Circonduzioni braccia x 30 sec\n- Affondi camminati x 10 per gamba\n\nTra 10 secondi si parte!")
+        await asyncio.sleep(10)
+
+        for idx, exercise in enumerate(workout_plan):
+            msg = f"**{exercise['muscle']}** - {exercise['exercise']} {muscle_emoji(exercise['muscle'])}\n"
+            msg += f"{exercise['description']}\n\n{exercise['test']}"
+            await query.message.reply_text(msg, parse_mode='Markdown')
+            await rest_timer(query, 60)
+
+        await query.message.reply_text("Allenamento completato! Ottimo lavoro! **Recupera e preparati per la prossima sessione.**")
+
+async def rest_timer(query, seconds):
+    msg = await query.message.reply_text("Riposo: {} sec".format(seconds))
+    for remaining in range(seconds, 0, -1):
+        await asyncio.sleep(1)
         try:
-            with open("log.txt", "r") as f:
-                testo = f.read() or "Nessun allenamento registrato."
+            await msg.edit_text("Riposo: {} sec".format(remaining))
         except:
-            testo = "Nessun log disponibile."
-        await query.edit_message_text(testo[-4000:])  # Telegram max 4096 chars
-    elif scelta == "info":
-        await query.edit_message_text("Questo bot ti guida nel tuo allenamento ipertrofico in palestra.")
-    return ConversationHandler.END
+            break
 
-async def scegli_giorno(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    giorno = query.data
-    user_id = query.from_user.id
-    user_sessions[user_id] = {
-        "giorno": giorno,
-        "esercizi": schede_settimanali[giorno],
-        "indice_esercizio": 0,
-        "indice_serie": 0,
-        "log": []
+def muscle_emoji(muscle):
+    emoji_map = {
+        "Petto": "🏋️",
+        "Schiena": "🧗",
+        "Gambe": "🦵",
+        "Spalle": "🏋️‍♂️",
+        "Bicipiti": "💪",
+        "Tricipiti": "🏋️‍♀️"
     }
-    await mostra_esercizio(update, context)
-    return ALLENAMENTO
-
-async def mostra_esercizio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    sessione = user_sessions[user_id]
-    esercizio = sessione["esercizi"][sessione["indice_esercizio"]]
-    serie_corrente = sessione["indice_serie"] + 1
-
-    testo = (
-        f"{'🟡 Riscaldamento\n' if esercizio.get('warmup') else ''}"
-        f"Esercizio: {esercizio['nome']}\n"
-        f"Serie {serie_corrente}/{esercizio['serie']} - {esercizio['ripetizioni']} ripetizioni"
-    )
-    keyboard = [[InlineKeyboardButton("✅ Serie completata", callback_data="serie_completata")]]
-    markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text= testo, reply_markup=markup)
-
-async def serie_completata(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    s = user_sessions[user_id]
-    esercizio = s["esercizi"][s["indice_esercizio"]]
-    s["log"].append(f"{esercizio['nome']} - Serie {s['indice_serie']+1}/{esercizio['serie']} completata")
-    s["indice_serie"] += 1
-
-    if s["indice_serie"] < esercizio["serie"]:
-        await timer_recupero(update, esercizio.get("recupero", 60))
-        await mostra_esercizio(update, context)
-    else:
-        s["indice_esercizio"] += 1
-        s["indice_serie"] = 0
-        if s["indice_esercizio"] < len(s["esercizi"]):
-            await timer_recupero(update, esercizio.get("recupero", 60))
-            await mostra_esercizio(update, context)
-        else:
-            await mostra_riepilogo(update, context)
-            return ConversationHandler.END
-    return ALLENAMENTO
-
-async def timer_recupero(update: Update, durata: int):
-    query = update.callback_query
-    step = durata // 6
-    barra = ""
-    msg = await query.edit_message_text("Recupero: in corso...\n[          ]")
-    for i in range(1, 7):
-        await asyncio.sleep(step)
-        barra = "#" * i + " " * (10 - i)
-        testo = f"Recupero: {durata - (i * step)}s rimanenti\n[{barra}]"
-        if durata - (i * step) <= 10:
-            testo += " (preparati)"
-        await msg.edit_text(testo)
-    await msg.edit_text("Recupero completato! Passiamo avanti...")
-
-async def mostra_riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.callback_query.from_user.id
-    s = user_sessions[user_id]
-    log = "\n".join(s["log"])
-    testo = f"Allenamento completato ({s['giorno']})!\n\n{log}"
-    await update.callback_query.edit_message_text(text=testo)
-
-    with open("log.txt", "a") as f:
-        f.write(f"Giorno: {s['giorno']}\n{log}\n\n")
-
-    user_sessions.pop(user_id, None)
-
-async def annulla(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_sessions.pop(update.message.from_user.id, None)
-    await update.message.reply_text("Allenamento annullato.")
-    return ConversationHandler.END
-
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            SCELTA_AZIONE: [CallbackQueryHandler(menu_principale)],
-            SCELTA_GIORNO: [CallbackQueryHandler(scegli_giorno)],
-            ALLENAMENTO: [CallbackQueryHandler(serie_completata, pattern="^serie_completata$")]
-        },
-        fallbacks=[CommandHandler("annulla", annulla)],
-    )
-    app.add_handler(conv_handler)
-    print("Bot in esecuzione...")
-    app.run_polling()
+    return emoji_map.get(muscle, "")
 
 if __name__ == "__main__":
-    main()
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    print("Bot avviato...")
+    app.run_polling()

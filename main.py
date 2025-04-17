@@ -9,27 +9,51 @@ from telegram.ext import (
 )
 
 TOKEN = "8038871118:AAG78r6cvtCGn2sCmcTioECNxcRY0q_91Jc"
-SCELTA_GIORNO, ALLENAMENTO = range(2)
+SCELTA_AZIONE, SCELTA_GIORNO, ALLENAMENTO = range(3)
 
 schede_settimanali = {
     "Lunedì": [
-        {"nome": "Chest press (warm-up)", "serie": 1, "ripetizioni": 15, "warmup": True},
-        {"nome": "Panca piana", "serie": 4, "ripetizioni": 8},
-        {"nome": "Curl con bilanciere", "serie": 4, "ripetizioni": 10}
+        {"nome": "Chest press (warm-up)", "serie": 1, "ripetizioni": 15, "warmup": True, "recupero": 45},
+        {"nome": "Panca piana", "serie": 4, "ripetizioni": 8, "recupero": 90},
+        {"nome": "Curl con bilanciere", "serie": 4, "ripetizioni": 10, "recupero": 60}
     ],
     "Venerdì": [
-        {"nome": "Squat corpo libero (warm-up)", "serie": 1, "ripetizioni": 15, "warmup": True},
-        {"nome": "Squat", "serie": 4, "ripetizioni": 8}
+        {"nome": "Squat corpo libero (warm-up)", "serie": 1, "ripetizioni": 15, "warmup": True, "recupero": 45},
+        {"nome": "Squat", "serie": 4, "ripetizioni": 8, "recupero": 120}
     ]
 }
 
 user_sessions = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton(g, callback_data=g)] for g in schede_settimanali]
+    keyboard = [
+        [InlineKeyboardButton("🏋️ Allenamento", callback_data="allenamento")],
+        [InlineKeyboardButton("📄 Log allenamenti", callback_data="log")],
+        [InlineKeyboardButton("ℹ️ Info", callback_data="info")]
+    ]
     markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Ciao! Scegli il giorno:", reply_markup=markup)
-    return SCELTA_GIORNO
+    await update.message.reply_text("Benvenuto! Cosa vuoi fare?", reply_markup=markup)
+    return SCELTA_AZIONE
+
+async def menu_principale(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    scelta = query.data
+    if scelta == "allenamento":
+        keyboard = [[InlineKeyboardButton(g, callback_data=g)] for g in schede_settimanali]
+        markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("Scegli il giorno:", reply_markup=markup)
+        return SCELTA_GIORNO
+    elif scelta == "log":
+        try:
+            with open("log.txt", "r") as f:
+                testo = f.read() or "Nessun allenamento registrato."
+        except:
+            testo = "Nessun log disponibile."
+        await query.edit_message_text(testo[-4000:])  # Telegram max 4096 chars
+    elif scelta == "info":
+        await query.edit_message_text("Questo bot ti guida nel tuo allenamento ipertrofico in palestra.")
+    return ConversationHandler.END
 
 async def scegli_giorno(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -60,7 +84,7 @@ async def mostra_esercizio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     keyboard = [[InlineKeyboardButton("✅ Serie completata", callback_data="serie_completata")]]
     markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text=testo, reply_markup=markup)
+    await query.edit_message_text(text= testo, reply_markup=markup)
 
 async def serie_completata(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -72,31 +96,31 @@ async def serie_completata(update: Update, context: ContextTypes.DEFAULT_TYPE):
     s["indice_serie"] += 1
 
     if s["indice_serie"] < esercizio["serie"]:
-        await timer_recupero(update)
+        await timer_recupero(update, esercizio.get("recupero", 60))
         await mostra_esercizio(update, context)
     else:
         s["indice_esercizio"] += 1
         s["indice_serie"] = 0
         if s["indice_esercizio"] < len(s["esercizi"]):
-            await timer_recupero(update)
+            await timer_recupero(update, esercizio.get("recupero", 60))
             await mostra_esercizio(update, context)
         else:
             await mostra_riepilogo(update, context)
             return ConversationHandler.END
     return ALLENAMENTO
 
-async def timer_recupero(update: Update):
+async def timer_recupero(update: Update, durata: int):
     query = update.callback_query
-    msg = await query.edit_message_text("Recupero: 60s rimanenti...")
-    await asyncio.sleep(15)
-    await msg.edit_text("Recupero: 45s rimanenti...")
-    await asyncio.sleep(15)
-    await msg.edit_text("Recupero: 30s rimanenti...")
-    await asyncio.sleep(15)
-    await msg.edit_text("Recupero: 15s rimanenti...")
-    await asyncio.sleep(5)
-    await msg.edit_text("Recupero: 10s rimanenti... (preparati)")
-    await asyncio.sleep(10)
+    step = durata // 6
+    barra = ""
+    msg = await query.edit_message_text("Recupero: in corso...\n[          ]")
+    for i in range(1, 7):
+        await asyncio.sleep(step)
+        barra = "#" * i + " " * (10 - i)
+        testo = f"Recupero: {durata - (i * step)}s rimanenti\n[{barra}]"
+        if durata - (i * step) <= 10:
+            testo += " (preparati)"
+        await msg.edit_text(testo)
     await msg.edit_text("Recupero completato! Passiamo avanti...")
 
 async def mostra_riepilogo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,6 +145,7 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            SCELTA_AZIONE: [CallbackQueryHandler(menu_principale)],
             SCELTA_GIORNO: [CallbackQueryHandler(scegli_giorno)],
             ALLENAMENTO: [CallbackQueryHandler(serie_completata, pattern="^serie_completata$")]
         },
